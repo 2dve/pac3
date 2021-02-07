@@ -421,7 +421,6 @@ function PART:SetModel(path)
 						ent:SetBodygroup(i, 0)
 					end
 
-					self:CallRecursiveExclude('OnShow')
 				end
 			end, function(err)
 				pac.Message(err)
@@ -450,7 +449,6 @@ function PART:SetModel(path)
 					ent:SetBodygroup(i, 0)
 				end
 
-				self:CallRecursiveExclude('OnShow')
 			end)
 		end
 

@@ -122,9 +122,7 @@ function PART:AttachToEntity(ent)
 
 	ent:CallOnRemove("pac_projectile_" .. id, function() part:Remove() end)
 
-	pac.HookEntityRender(ent, part)
-
-	part:CallRecursive("CThink") -- this somehow fixes events triggering on start
+	pac.HookEntityRender(part)
 
 	ent.RenderOverride = ent.RenderOverride or function()
 		if self.AimDir then

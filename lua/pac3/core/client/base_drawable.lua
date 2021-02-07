@@ -10,23 +10,6 @@ local SysTime = SysTime
 
 local LocalToWorld = LocalToWorld
 
-local function SETUP_CACHE_FUNC(tbl, func_name)
-	local old_func = tbl[func_name]
-
-	local cached_key = "cached_" .. func_name
-	local cached_key2 = "cached_" .. func_name .. "_2"
-	local last_key = "last_" .. func_name .. "_framenumber"
-
-	tbl[func_name] = function(self, a,b,c,d,e)
-		if self[last_key] ~= pac.FrameNumber or self[cached_key] == nil then
-			self[cached_key], self[cached_key2] = old_func(self, a,b,c,d,e)
-			self[last_key] = pac.FrameNumber
-		end
-
-		return self[cached_key], self[cached_key2]
-	end
-end
-
 local BUILDER, PART = pac.PartTemplate("base_movable")
 
 PART.ClassName = "base_drawable"
@@ -116,7 +99,7 @@ do -- modifiers
 	function PART:ModifiersPreEvent(event)
 		if #self.modifiers > 0 then
 			for _, part in ipairs(self.modifiers) do
-				if not part:IsHidden() then
+				if not part:IsHidden() and not part:GetEventHide() then
 
 					if not part.pre_draw_events then part.pre_draw_events = {} end
 					if not part.pre_draw_events[event] then part.pre_draw_events[event] = "Pre" .. event end
@@ -132,7 +115,7 @@ do -- modifiers
 	function PART:ModifiersPostEvent(event)
 		if #self.modifiers > 0 then
 			for _, part in ipairs(self.modifiers) do
-				if not part:IsHidden() then
+				if not part:IsHidden() and not part:GetEventHide() then
 
 					if not part.post_draw_events then part.post_draw_events = {} end
 					if not part.post_draw_events[event] then part.post_draw_events[event] = "Post" .. event end
@@ -145,26 +128,6 @@ do -- modifiers
 		end
 	end
 
-end
-
-function PART:FlushFromRenderingState(newState)
-	self.shown_from_rendering = nil
-end
-
-function PART:IsDrawHidden()
-	return self.draw_hidden
-end
-
-local BaseClass_SetOwner = PART.SetOwner
-
-function PART:SetOwner(owner)
-	BaseClass_SetOwner(self, owner)
-
-	pac.RunNextFrame(self:GetRootPart().Id .. "_hook_render", function()
-		if self:IsValid() then
-			self:HookEntityRender()
-		end
-	end)
 end
 
 do
@@ -210,20 +173,17 @@ do -- drawing. this code is running every frame
 
 	--function PART:Draw(pos, ang, draw_type, isNonRoot)
 	function PART:Draw(pos, ang, draw_type)
-		-- Think takes care of polling this
-		if not self.last_enabled then return end
+		if not self.OnDraw then return end
 
-		if self:IsHidden() then return end
+		if self:IsHidden() or self:GetEventHide() then return end
 
 		if
-			self.OnDraw and
 			(
 				draw_type == "viewmodel" or draw_type == "hands" or
 				((self.Translucent == true or self.force_translucent == true) and draw_type == "translucent")  or
 				((self.Translucent == false or self.force_translucent == false) and draw_type == "opaque")
 			)
 		then
-			local sysTime = SysTime()
 			pos, ang = self:GetDrawPosition()
 
 			self.cached_pos = pos
@@ -233,7 +193,9 @@ do -- drawing. this code is running every frame
 				pos, ang = LocalToWorld(self.PositionOffset, self.AngleOffset, pos, ang)
 			end
 
-			if not self.HandleModifiersManually then self:ModifiersPreEvent('OnDraw', draw_type) end
+			if not self.HandleModifiersManually then
+				self:ModifiersPreEvent('OnDraw', draw_type)
+			end
 
 			if self.IgnoreZ then cam.IgnoreZ(true) end
 
@@ -280,45 +242,10 @@ do -- drawing. this code is running every frame
 
 			if self.IgnoreZ then cam.IgnoreZ(false) end
 
-			if not self.HandleModifiersManually then self:ModifiersPostEvent('OnDraw', draw_type) end
-			self.selfDrawTime = SysTime() - sysTime
-		end
-
-		-- if not isNonRoot then
-		--  for i, child in ipairs(self:GetChildrenList()) do
-		--      child:Draw(pos, ang, draw_type, true)
-		--  end
-		-- end
-
-		local sysTime = SysTime()
-
-		for _, child in ipairs(self:GetChildren()) do
-			if child.Draw then
-				child:Draw(pos, ang, draw_type)
+			if not self.HandleModifiersManually then
+				self:ModifiersPostEvent('OnDraw', draw_type)
 			end
 		end
-
-		if draw_type == "translucent" then
-			self.childrenTranslucentDrawTime = SysTime() - sysTime
-		elseif draw_type == "opaque" then
-			self.childrenOpaqueDrawTime = SysTime() - sysTime
-		end
-	end
-	--SETUP_CACHE_FUNC(PART, "CalcAngles")
-end
-
-function PART:HookEntityRender()
-	local root = self:GetRootPart()
-	local owner = root:GetOwner()
-
-	if root.ClassName ~= "group" then return end -- FIX ME
-
-	if root.last_owner:IsValid() then
-		pac.UnhookEntityRender(root.last_owner, root)
-	end
-
-	if owner:IsValid() then
-		pac.HookEntityRender(owner, root)
 	end
 end
 

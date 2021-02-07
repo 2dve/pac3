@@ -132,7 +132,7 @@ function PART:SetData(str)
 	end
 end
 
-function PART:OnShow(owner)
+function PART:OnShow()
 	--play animation
 	local owner = self:GetOwner()
 

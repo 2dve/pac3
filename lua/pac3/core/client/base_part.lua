@@ -10,23 +10,6 @@ local SysTime = SysTime
 
 local LocalToWorld = LocalToWorld
 
-local function SETUP_CACHE_FUNC(tbl, func_name)
-	local old_func = tbl[func_name]
-
-	local cached_key = "cached_" .. func_name
-	local cached_key2 = "cached_" .. func_name .. "_2"
-	local last_key = "last_" .. func_name .. "_framenumber"
-
-	tbl[func_name] = function(self, a,b,c,d,e)
-		if self[last_key] ~= pac.FrameNumber or self[cached_key] == nil then
-			self[cached_key], self[cached_key2] = old_func(self, a,b,c,d,e)
-			self[last_key] = pac.FrameNumber
-		end
-
-		return self[cached_key], self[cached_key2]
-	end
-end
-
 local BUILDER, PART = pac.PartTemplate()
 
 PART.ClassName = "base"
@@ -48,10 +31,6 @@ BUILDER
 			:GetSet("EditorExpand", true, {hidden = true})
 			:GetSet("UniqueID", "", {hidden = true})
 			:GetSetPart("Parent")
-			:GetSet("IsDisturbing", false, {
-				editor_friendly = "IsExplicit",
-				description = "Marks this content as NSFW, and makes it hidden for most of players who have pac_hide_disturbing set to 1"
-			})
 			:GetSet("DrawOrder", 0)
 	:EndStorableVars()
 
@@ -73,9 +52,7 @@ function PART:PreInitialize()
 	self.Children = {}
 	self.Children2 = {}
 	self.modifiers = {}
-	self.RootPart = NULL
 	self.DrawOrder = 0
-	self.hide_disturbing = false
 	self.event_hide_registry = {}
 end
 
@@ -210,7 +187,6 @@ do -- owner
 		else
 			if removed and prev_owner == ent then
 				self:SetOwner(NULL)
-				self.temp_hidden = true
 				return
 			end
 
@@ -218,7 +194,6 @@ do -- owner
 				ent = pac.HandleOwnerName(self:GetPlayerOwner(), self.OwnerName, ent, self) or NULL
 				if ent ~= prev_owner then
 					self:SetOwner(ent)
-					self.temp_hidden = false
 					return true
 				end
 			end
@@ -227,13 +202,13 @@ do -- owner
 	end
 
 	function PART:SetOwner(ent)
-
-		if IsValid(self.last_owner) and self.last_owner ~= ent then
-			self:CallRecursive("OnHide", true)
+		if self.Owner:IsValid() then
+			self:CallRecursive("OnHide")
 		end
 
-		self.last_owner = self.Owner
 		self.Owner = ent or NULL
+
+		self:CallRecursive("OnShow", true)
 	end
 
 	-- always return the root owner
@@ -270,17 +245,6 @@ do -- owner
 
 		return self.Owner or NULL
 	end
-
-	--SETUP_CACHE_FUNC(PART, "GetOwner")
-end
-
-do
-	local pac_hide_disturbing = CreateClientConVar("pac_hide_disturbing", "1", true, true, "Hide parts which outfit creators marked as 'nsfw' (e.g. gore or explicit content)")
-
-	function PART:SetIsDisturbing(val)
-		self.IsDisturbing = val
-		self.hide_disturbing = pac_hide_disturbing:GetBool() and val
-	end
 end
 
 do -- parenting
@@ -288,35 +252,21 @@ do -- parenting
 		return self.Children
 	end
 
+	local function add_children_to_list(parent, list)
+		for _, child in ipairs(parent:GetChildren()) do
+			table.insert(list, child)
+			add_children_to_list(child, list)
+		end
+	end
+
 	function PART:GetChildrenList()
-		if not self.children_list then
-			self:BuildChildrenList()
+		if not self.children_list or true then
+			self.children_list = {}
+
+			add_children_to_list(self, self.children_list)
 		end
 
 		return self.children_list
-	end
-
-	local function add_children_to_list(parent, list, drawOrder)
-		for _, child in ipairs(parent:GetChildren()) do
-			table.insert(list, {child, child.DrawOrder + drawOrder})
-			add_children_to_list(child, list, drawOrder + child.DrawOrder)
-		end
-	end
-
-	function PART:BuildChildrenList()
-		local child = {}
-		self.children_list = child
-
-		local tableToSort = {}
-		add_children_to_list(self, tableToSort, self.DrawOrder)
-
-		table.sort(tableToSort, function(a, b)
-			return a[2] < b[2]
-		end)
-
-		for i, data in ipairs(tableToSort) do
-			child[#child + 1] = data[1]
-		end
 	end
 
 	function PART:CreatePart(name)
@@ -335,30 +285,20 @@ do -- parenting
 		end
 	end
 
-	function PART:BuildParentList()
+	function PART:GetParentList()
+		if not self.parent_list or true then
+			self.parent_list = {}
 
-		if not self:HasParent() then return end
+			local parent = self:GetParent()
 
-		self.parent_list = {}
-
-		local temp = self:GetParent()
-
-		table.insert(self.parent_list, temp)
-
-		for _ = 1, 100 do
-			local parent = temp:GetParent()
-			if not parent:IsValid() then break end
-
-			table.insert(self.parent_list, parent)
-
-			temp = parent
+			while true do
+				if not parent:IsValid() then break end
+				table.insert(self.parent_list, parent)
+				parent = parent:GetParent()
+			end
 		end
 
-		self.RootPart = temp
-
-		for _, part in ipairs(self:GetChildren()) do
-			part:BuildParentList()
-		end
+		return self.parent_list
 	end
 
 	function PART:AddChild(part)
@@ -380,8 +320,6 @@ do -- parenting
 			table.insert(self.Children, part)
 		end
 
-		self:InvalidateChildrenList()
-
 		part.ParentName = self:GetName()
 		part.ParentUID = self:GetUniqueID()
 
@@ -398,16 +336,11 @@ do -- parenting
 		part:SortChildren()
 		self:SortChildren()
 
-		self:BuildParentList()
-		part:BuildParentList()
-
 		if self:GetPlayerOwner() == pac.LocalPlayer then
 			pac.CallHook("OnPartParent", self, part)
 		end
 
-		part.shown_from_rendering = true
-		part:SetKeyValueRecursive("last_hidden", nil)
-		part:SetKeyValueRecursive("last_hidden_by_event", nil)
+		pac.HookEntityRender(part)
 
 		return part.Id
 	end
@@ -448,17 +381,9 @@ do -- parenting
 	end
 
 	function PART:GetRootPart()
-
-		if not self:HasParent() then return self end
-
-		if not self.RootPart:IsValid() then
-			self:BuildParentList()
-		end
-
-		return self.RootPart
+		local parents = self:GetParentList()
+		return parents[#parents] or self
 	end
-
-	SETUP_CACHE_FUNC(PART, "GetRootPart")
 
 	do
 		function PART:CallRecursive(func, ...)
@@ -475,66 +400,25 @@ do -- parenting
 			end
 		end
 
-		function PART:CallRecursiveExclude(func, ...)
-			local child = self:GetChildrenList()
-
-			for i = 1, #child do
-				if child[i][func] then
-					child[i][func](child[i], ...)
-				end
-			end
-		end
-
-		function PART:SetKeyValueRecursive(key, val)
-			self[key] = val
-
-			local child = self:GetChildrenList()
-
-			for i = 1, #child do
-				child[i][key] = val
-			end
-		end
-
 		function PART:SetHide(b)
 			self.Hide = b
-
-			self:SetKeyValueRecursive("hidden", b)
 		end
 
-		function PART:RemoveEventHide(object)
-			self.event_hide_registry[object] = nil
-		end
-
-		function PART:SetEventHide(b, object)
-			object = object or self
-
-			-- this can and will produce undefined behavior (like skipping keys)
-			-- but still, it will do the job at cleaning up at least a part of table
-			for k, v in pairs(self.event_hide_registry) do
-				if not IsValid(k) then
-					self.event_hide_registry[k] = nil
-				end
-			end
-
-			self.event_hide_registry[object] = b
-			self.event_hidden = self:CalculateEventHidden()
-
-			if self.event_hidden ~= b then
-				self.shown_from_rendering = nil
-			end
-		end
-
-		function PART:FlushFromRenderingState(newState)
-			self.shown_from_rendering = nil
+		function PART:SetDrawHidden(b)
+			self.draw_hidden = b
 		end
 
 		function PART:IsDrawHidden()
 			return self.draw_hidden
 		end
 
-		function PART:CalculateEventHidden()
-			for k, v in pairs(self.event_hide_registry) do
-				if v then
+		function PART:IsHidden()
+			if self.Hide or self.draw_hidden then
+				return true
+			end
+
+			for _, child in ipairs(self:GetParentList()) do
+				if child.Hide or child.draw_hidden then
 					return true
 				end
 			end
@@ -542,74 +426,22 @@ do -- parenting
 			return false
 		end
 
-		function PART:IsEventHidden(object, invert)
-			if object then
-				if invert then
-					for k, v in pairs(self.event_hide_registry) do
-						if k ~= object and v then
-							return true
-						end
-					end
-
-					return false
-				end
-
-				return self.event_hide_registry[object] == true
-			end
-
-			if self.event_hidden == nil then
-				self.event_hidden = self:CalculateEventHidden()
-			end
-
+		function PART:GetEventHide()
 			return self.event_hidden
 		end
 
-		function PART:IsHiddenInternal()
-			return self.hidden
+		function PART:SetEventHide(b)
+			self.event_hidden = b
+			for _, child in ipairs(self:GetChildrenList()) do
+				child.event_hidden = b
+			end
 		end
-
-		function PART:IsHidden()
-			if
-				self.draw_hidden or
-				self.temp_hidden or
-				self.hidden or
-				self.hide_disturbing or
-				self:IsEventHidden()
-			then
-				return true, self:IsEventHidden()
-			end
-
-			if not self:HasParent() then
-				return false
-			end
-
-			if not self.parent_list then
-				self:BuildParentList()
-			end
-
-			for _, parent in ipairs(self.parent_list) do
-				if
-					parent.draw_hidden or
-					parent.temp_hidden or
-					parent.hidden or
-					parent.event_hidden
-				then
-					return true, parent:IsEventHidden()
-				end
-			end
-
-			return false
-		end
-
-		SETUP_CACHE_FUNC(PART, "IsHidden")
 	end
 
 	function PART:InvalidateChildrenList()
 		self.children_list = nil
-		if self.parent_list then
-			for _, part in ipairs(self.parent_list) do
-				part.children_list = nil
-			end
+		for _, part in ipairs(self:GetParentList()) do
+			part.children_list = nil
 		end
 	end
 
@@ -738,7 +570,7 @@ do -- serializing
 				tbl = make_copy(table.Copy(tbl), copy_id)
 			end
 
-			local ok, err = xpcall(SetTable, ErrorNoHalt, self, tbl)
+			local ok, err = xpcall(SetTable, function(err) ErrorNoHalt(debug.traceback(err)) end, self, tbl)
 			if not ok then
 				pac.Message(Color(255, 50, 50), "SetTable failed: ", err)
 			end
@@ -926,9 +758,12 @@ do -- events
 
 
 		local owner_id = self:GetPlayerOwnerId()
+
 		if owner_id then
 			pac.RemoveUniqueIDPart(owner_id, self.UniqueID)
 		end
+
+		pac.UnhookEntityRender(self)
 
 		pac.RemovePart(self)
 		self.is_valid = false
@@ -991,33 +826,37 @@ do -- events
 end
 
 function PART:CalcShowHide()
-	local b, byEvent = self:IsHidden()
-	local triggerUpdate = b ~= self.last_hidden or self.last_hidden_by_event ~= byEvent
-	if not triggerUpdate then return end
+	do
+		local b = self:IsHidden()
 
-	if b ~= self.last_hidden then
-		if b then
-			self:OnHide()
-		else
-			self:OnShow(self.shown_from_rendering == true or self.shown_from_rendering == FrameNumber())
+		if b ~= self.last_hidden then
+			if b then
+				self:OnHide()
+			else
+				self:OnShow(true)
+			end
 		end
+
+		self.last_hidden = b
 	end
 
-	if FrameNumber() ~= self.shown_from_rendering then
-		self.shown_from_rendering = nil
-	end
+	do
+		local b = self:GetEventHide()
 
-	self.last_hidden = b
-	self.last_hidden_by_event = byEvent
+		if b ~= self.last_event_hidden then
+			if b then
+				self:OnHide()
+			else
+				self:OnShow()
+			end
+		end
+
+		self.last_event_hidden = b
+	end
 end
 
 function PART:CThink()
-	if self.ThinkTime == 0 then
-		if self.last_think ~= pac.FrameNumber then
-			self:Think()
-			self.last_think = pac.FrameNumber
-		end
-	elseif not self.last_think or self.last_think < pac.RealTime then
+	if self.ThinkTime == 0 or (not self.last_think or self.last_think < pac.RealTime) then
 		self:Think()
 		self.last_think = pac.RealTime + (self.ThinkTime or 0.1)
 	end
@@ -1030,21 +869,6 @@ function PART:Think()
 
 	if not self.AlwaysThink and self:IsHidden() then return end
 
-	local owner = self:GetOwner()
-
-	if owner:IsValid() then
-		if owner ~= self.last_owner then
-			self.last_hidden = false
-			self.last_hidden_by_event = false
-			self.last_owner = owner
-		end
-
-		--if not owner.pac_bones then
-			--self:GetModelBones() <<< DRAW RELATED
-		--end
-	end
-
-
 	if self.delayed_variables then
 
 		for _, data in ipairs(self.delayed_variables) do
@@ -1055,7 +879,6 @@ function PART:Think()
 	end
 	self:OnThink()
 end
-
 
 function PART:SubmitToServer()
 	pac.SubmitPart(self:ToTable())

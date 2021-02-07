@@ -129,7 +129,7 @@ PART.OldEvents = {
 			if self.AffectChildrenOnly then
 				local hidden, event_hidden = self:IsHidden()
 
-				if hidden and (not event_hidden or not self:IsEventHidden(self, true)) then
+				if hidden and (not event_hidden or not self:GetEventHide(self, true)) then
 					return false
 				end
 			end
@@ -154,7 +154,7 @@ PART.OldEvents = {
 			if self.AffectChildrenOnly then
 				local hidden, event_hidden = self:IsHidden()
 
-				if hidden and (not event_hidden or not self:IsEventHidden(self, true)) then
+				if hidden and (not event_hidden or not self:GetEventHide(self, true)) then
 					return false
 				end
 			end
@@ -1446,20 +1446,6 @@ function PART:GetNiceName()
 	return PART.Events[event_name]:GetNiceName(self, self:GetOwner(self.RootOwner))
 end
 
-function PART:OnRemove()
-	if self.AffectChildrenOnly then
-		for _, child in ipairs(self:GetChildren()) do
-			child:RemoveEventHide(self)
-		end
-	else
-		local parent = self:GetParent()
-
-		if parent:IsValid() then
-			parent:RemoveEventHide(self)
-		end
-	end
-end
-
 local function should_hide(self, ent, eventObject)
 	if not eventObject:IsAvaliable(self) then
 		return true
@@ -1467,24 +1453,18 @@ local function should_hide(self, ent, eventObject)
 
 	local b = false
 
-	if self.hidden or self.event_hidden then
-		b = self.Invert
+	if eventObject.ParseArguments then
+		b = eventObject:Think(self, ent, eventObject:ParseArguments(self)) or false
 	else
-		if eventObject.ParseArguments then
-			b = eventObject:Think(self, ent, eventObject:ParseArguments(self)) or false
-		else
-			b = eventObject:Think(self, ent, self:GetParsedArgumentsForObject(eventObject)) or false
-		end
+		b = eventObject:Think(self, ent, self:GetParsedArgumentsForObject(eventObject)) or false
+	end
 
-		if self.Invert then
-			b = not b
-		end
+	if self.Invert then
+		b = not b
 	end
 
 	return b
 end
-
-PART.last_event_triggered = false
 
 function PART:OnThink()
 	local ent = self:GetOwner(self.RootOwner)
@@ -1493,44 +1473,18 @@ function PART:OnThink()
 		local data = self.Events[self.Event]
 
 		if data then
+			local b = should_hide(self, ent, data)
+			self.event_triggered = b
+
 			if self.AffectChildrenOnly then
-				local b = should_hide(self, ent, data)
-
 				for _, child in ipairs(self:GetChildren()) do
-					child:SetEventHide(b, self)
-				end
-
-				-- this is just used for the editor..
-				self.event_triggered = b
-
-				if self.last_event_triggered ~= self.event_triggered then
-					if not self.suppress_event_think then
-						self.suppress_event_think = true
-						self:CallRecursive("CalcShowHide")
-						self.suppress_event_think = nil
-					end
-					self.last_event_triggered = self.event_triggered
+					child:SetEventHide(b)
 				end
 			else
 				local parent = self:GetParent()
 
 				if parent:IsValid() then
-					local b = should_hide(self, ent, data)
-
-					parent:SetEventHide(b, self)
-					parent:CallRecursive("FlushFromRenderingState")
-
-					-- this is just used for the editor..
-					self.event_triggered = b
-
-					if self.last_event_triggered ~= self.event_triggered then
-						if not self.suppress_event_think then
-							self.suppress_event_think = true
-							parent:CallRecursive("CalcShowHide")
-							self.suppress_event_think = nil
-						end
-						self.last_event_triggered = self.event_triggered
-					end
+					parent:SetEventHide(b)
 				end
 			end
 		end
