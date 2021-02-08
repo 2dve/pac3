@@ -16,13 +16,9 @@ function PART:Initialize()
 	if self:GetExectueOnWear() then
 		self:Execute()
 	end
-
-	self.m_nextworn = RealTime() + 0.4
 end
 
 function PART:OnShow()
-	if self.m_nextworn > RealTime() then return end
-
 	if self:GetExectueOnShow() then
 		self:Execute()
 	end

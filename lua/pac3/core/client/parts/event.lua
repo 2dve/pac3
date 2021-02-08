@@ -1468,25 +1468,25 @@ end
 
 function PART:OnThink()
 	local ent = self:GetOwner(self.RootOwner)
+	if not ent:IsValid() then return end
 
-	if ent:IsValid() then
-		local data = self.Events[self.Event]
+	local data = self.Events[self.Event]
+	if not data then return end
 
-		if data then
-			local b = should_hide(self, ent, data)
-			self.event_triggered = b
+	if self:GetEventHide() then return end
 
-			if self.AffectChildrenOnly then
-				for _, child in ipairs(self:GetChildren()) do
-					child:SetEventHide(b)
-				end
-			else
-				local parent = self:GetParent()
+	local b = should_hide(self, ent, data)
+	self.event_triggered = b
 
-				if parent:IsValid() then
-					parent:SetEventHide(b)
-				end
-			end
+	if self.AffectChildrenOnly then
+		for _, child in ipairs(self:GetChildren()) do
+			child:SetEventHide(b)
+		end
+	else
+		local parent = self:GetParent()
+
+		if parent:IsValid() then
+			parent:SetEventHide(b)
 		end
 	end
 

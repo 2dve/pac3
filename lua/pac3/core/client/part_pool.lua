@@ -70,7 +70,7 @@ local function parts_from_ent(ent)
 end
 
 do
-	local function update(ent, type)
+	function pac.UpdateEntityParts(ent, update_type)
 		pac.RealTime = RealTime()
 		pac.FrameNumber = FrameNumber()
 		ent.pac_model = ent:GetModel()
@@ -78,26 +78,34 @@ do
 		local parts = ent_parts[ent]
 		if not parts then return end
 
-		if type ~= "update" then
+		if update_type ~= "update" then
 			pac.ResetBones(ent)
 		end
 
-		for key, part in pairs(parts) do
-			if type == "update" then
-				for _, part in ipairs(part:GetChildrenList()) do
+		for key, root in pairs(parts) do
+			if update_type == "update" then
+				for _, part in ipairs(root:GetChildrenList()) do
 					part:CThink()
 				end
 			else
-				for _, part in ipairs(part:GetChildrenList()) do
-					if part.BuildBonePositions and not part:IsHidden() and not part:GetEventHide() then
+				for _, part in ipairs(root:GetChildrenList()) do
+					if not part.BuildBonePositions then continue end
+
+					if part.OwnerName ~= "hands" and update_type == "hands" then continue end
+					if part.OwnerName ~= "viewmodel" and update_type == "viewmodel" then continue end
+
+					if part:IsHidden() or part:GetEventHide() then continue end
+
 						part:BuildBonePositions()
 					end
-				end
 
-				for _, part in ipairs(part:GetChildrenList()) do
-					if part.Draw then
-						part:Draw(nil, nil, type)
-					end
+				for _, part in ipairs(root:GetChildrenList()) do
+					if not part.Draw then continue end
+
+					if part.OwnerName ~= "hands" and update_type == "hands" then continue end
+					if part.OwnerName ~= "viewmodel" and update_type == "viewmodel" then continue end
+
+					part:Draw(nil, nil, update_type)
 				end
 			end
 		end
@@ -107,10 +115,6 @@ do
 
 		render_MaterialOverride()
 		render_ModelMaterialOverride()
-	end
-
-	function pac.UpdateEntityParts(ent, update_type)
-		update(ent, update_type)
 	end
 end
 

@@ -158,93 +158,80 @@ do
 	end
 end
 
-do -- drawing. this code is running every frame
-	function PART:DrawChildren(event, pos, ang, draw_type, drawAll)
-		if drawAll then
-			for i, child in ipairs(self:GetChildrenList()) do
-				child:Draw(pos, ang, draw_type, true)
-			end
-		else
-			for i, child in ipairs(self:GetChildren()) do
-				child:Draw(pos, ang, draw_type)
-			end
-		end
-	end
-
-	--function PART:Draw(pos, ang, draw_type, isNonRoot)
+do
 	function PART:Draw(pos, ang, draw_type)
 		if not self.OnDraw then return end
 
 		if self:IsHidden() or self:GetEventHide() then return end
 
-		if
-			(
-				draw_type == "viewmodel" or draw_type == "hands" or
-				((self.Translucent == true or self.force_translucent == true) and draw_type == "translucent")  or
-				((self.Translucent == false or self.force_translucent == false) and draw_type == "opaque")
-			)
-		then
-			pos, ang = self:GetDrawPosition()
+		if draw_type == "translucent" then
+			if not self.Translucent and not self.force_translucent then
+				return
+			end
+		end
 
-			self.cached_pos = pos
-			self.cached_ang = ang
+		pos, ang = self:GetDrawPosition()
 
+		self.cached_pos = pos
+		self.cached_ang = ang
+
+		if self.PositionOffset and self.AngleOffset then
 			if not self.PositionOffset:IsZero() or not self.AngleOffset:IsZero() then
 				pos, ang = LocalToWorld(self.PositionOffset, self.AngleOffset, pos, ang)
 			end
+		end
 
-			if not self.HandleModifiersManually then
-				self:ModifiersPreEvent('OnDraw', draw_type)
+		if not self.HandleModifiersManually then
+			self:ModifiersPreEvent('OnDraw', draw_type)
+		end
+
+		if self.IgnoreZ then cam.IgnoreZ(true) end
+
+		if self.blend_override then
+			render.OverrideBlendFunc(true,
+				self.blend_override[1],
+				self.blend_override[2],
+				self.blend_override[3],
+				self.blend_override[4]
+			)
+
+			if self.blend_override[5] then
+				render.OverrideAlphaWriteEnable(true, self.blend_override[5] == "write_alpha")
 			end
 
-			if self.IgnoreZ then cam.IgnoreZ(true) end
+			if self.blend_override[6] then
+				render.OverrideColorWriteEnable(true, self.blend_override[6] == "write_color")
+			end
+		end
 
-			if self.blend_override then
-				render.OverrideBlendFunc(true,
-					self.blend_override[1],
-					self.blend_override[2],
-					self.blend_override[3],
-					self.blend_override[4]
-				)
+		if self.NoTextureFiltering then
+			render.PushFilterMin(TEXFILTER.POINT)
+			render.PushFilterMag(TEXFILTER.POINT)
+		end
 
-				if self.blend_override[5] then
-					render.OverrideAlphaWriteEnable(true, self.blend_override[5] == "write_alpha")
-				end
+		self:OnDraw(self:GetOwner(), pos, ang)
 
-				if self.blend_override[6] then
-					render.OverrideColorWriteEnable(true, self.blend_override[6] == "write_color")
-				end
+		if self.NoTextureFiltering then
+			render.PopFilterMin()
+			render.PopFilterMag()
+		end
+
+		if self.blend_override then
+			render.OverrideBlendFunc(false)
+
+			if self.blend_override[5] then
+				render.OverrideAlphaWriteEnable(false)
 			end
 
-			if self.NoTextureFiltering then
-				render.PushFilterMin(TEXFILTER.POINT)
-				render.PushFilterMag(TEXFILTER.POINT)
+			if self.blend_override[6] then
+				render.OverrideColorWriteEnable(false)
 			end
+		end
 
-			self:OnDraw(self:GetOwner(), pos, ang)
+		if self.IgnoreZ then cam.IgnoreZ(false) end
 
-			if self.NoTextureFiltering then
-				render.PopFilterMin()
-				render.PopFilterMag()
-			end
-
-			if self.blend_override then
-				render.OverrideBlendFunc(false)
-
-				if self.blend_override[5] then
-					render.OverrideAlphaWriteEnable(false)
-				end
-
-				if self.blend_override[6] then
-					render.OverrideColorWriteEnable(false)
-				end
-			end
-
-			if self.IgnoreZ then cam.IgnoreZ(false) end
-
-			if not self.HandleModifiersManually then
-				self:ModifiersPostEvent('OnDraw', draw_type)
-			end
+		if not self.HandleModifiersManually then
+			self:ModifiersPostEvent('OnDraw', draw_type)
 		end
 	end
 end
