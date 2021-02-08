@@ -38,8 +38,6 @@ BUILDER
 			:GetSet("DrawOrder", 0)
 	:EndStorableVars()
 
-PART.AllowSetupPositionFrameSkip = true
-
 local blend_modes = {
 	zero = 0,
 	one = 1,

@@ -51,7 +51,6 @@ end
 
 function PART:Initialize()
 	self:Reset()
-	self.AllowSetupPositionFrameSkip = false
 end
 
 function PART:OnShow()

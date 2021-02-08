@@ -10,23 +10,6 @@ local SysTime = SysTime
 
 local LocalToWorld = LocalToWorld
 
-local function SETUP_CACHE_FUNC(tbl, func_name)
-	local old_func = tbl[func_name]
-
-	local cached_key = "cached_" .. func_name
-	local cached_key2 = "cached_" .. func_name .. "_2"
-	local last_key = "last_" .. func_name .. "_framenumber"
-
-	tbl[func_name] = function(self, a,b,c,d,e)
-		if self[last_key] ~= pac.FrameNumber or self[cached_key] == nil then
-			self[cached_key], self[cached_key2] = old_func(self, a,b,c,d,e)
-			self[last_key] = pac.FrameNumber
-		end
-
-		return self[cached_key], self[cached_key2]
-	end
-end
-
 local BUILDER, PART = pac.PartTemplate("base")
 
 PART.ClassName = "base_movable"
@@ -52,8 +35,6 @@ BUILDER
 			:GetSetPart("AimPart", {editor_panel = "aimpartname"})
 			:GetSetPart("Parent")
 	:EndStorableVars()
-
-PART.AllowSetupPositionFrameSkip = true
 
 local BaseClass_PreInitialize = PART.PreInitialize
 
@@ -96,93 +77,73 @@ do -- bones
 		return name
 	end
 
-	function PART:BuildBonePositions()
-		if not self:IsHidden() then
-			self:OnBuildBonePositions()
-		end
-	end
-
 	function PART:OnBuildBonePositions()
 
 	end
 end
 
 function PART:GetDrawPosition(bone_override, skip_cache)
-	if not self.AllowSetupPositionFrameSkip or pac.FrameNumber ~= self.last_drawpos_framenum or not self.last_drawpos or skip_cache then
-		self.last_drawpos_framenum = pac.FrameNumber
+	local owner = self:GetOwner()
 
-		local owner = self:GetOwner()
-		if owner:IsValid() then
-			local pos, ang = self:GetBonePosition(bone_override, skip_cache)
+	if owner:IsValid() then
+		local pos, ang = self:GetBonePosition(bone_override, skip_cache)
 
-			pos, ang = LocalToWorld(
-				self.Position or Vector(),
-				self.Angles or Angle(),
-				pos or owner:GetPos(),
-				ang or owner:GetAngles()
-			)
+		pos, ang = LocalToWorld(
+			self.Position or Vector(),
+			self.Angles or Angle(),
+			pos or owner:GetPos(),
+			ang or owner:GetAngles()
+		)
 
-			ang = self:CalcAngles(ang) or ang
+		ang = self:CalcAngles(ang) or ang
 
-			self.last_drawpos = pos
-			self.last_drawang = ang
+		self.last_drawpos = pos
+		self.last_drawang = ang
 
-			return pos, ang
-		end
+		return pos, ang
 	end
 
 	return self.last_drawpos, self.last_drawang
 end
 
 function PART:GetBonePosition(bone_override, skip_cache)
-	if not self.AllowSetupPositionFrameSkip or pac.FrameNumber ~= self.last_bonepos_framenum or not self.last_bonepos or skip_cache then
-		self.last_bonepos_framenum = pac.FrameNumber
+	local owner = self:GetOwner()
+	local parent = self:GetParent()
 
-		local owner = self:GetOwner()
-		local parent = self:GetParent()
-
-		if parent:IsValid() and parent.ClassName == "jiggle" then
-			if skip_cache then
-				if parent.Translucent then
-					parent:Draw(nil, nil, "translucent")
-				else
-					parent:Draw(nil, nil, "opaque")
-				end
-			end
-
-			return parent.pos, parent.ang
-		end
-
-		local pos, ang
-
-		if parent:IsValid() and parent.GetDrawPosition then
-			local ent = parent.Entity or NULL
-
-			if ent:IsValid() then
-				-- if the parent part is a model, get the bone position of the parent model
-				if ent.pac_bone_affected ~= FrameNumber() then
-					ent:InvalidateBoneCache()
-				end
-
-				pos, ang = pac.GetBonePosAng(ent, bone_override or self.Bone)
+	if parent:IsValid() and parent.ClassName == "jiggle" then
+		if skip_cache then
+			if parent.Translucent then
+				parent:Draw(nil, nil, "translucent")
 			else
-				-- else just get the origin of the part
-				-- unless we've passed it from parent
-				pos, ang = parent:GetDrawPosition()
+				parent:Draw(nil, nil, "opaque")
 			end
-		elseif owner:IsValid() then
-			-- if there is no parent, default to owner bones
-			owner:InvalidateBoneCache()
-			pos, ang = pac.GetBonePosAng(owner, self.Bone)
 		end
 
-		self.last_bonepos = pos
-		self.last_boneang = ang
-
-		return pos, ang
+		return parent.pos, parent.ang
 	end
 
-	return self.last_bonepos, self.last_boneang
+	local pos, ang
+
+	if parent:IsValid() and parent.GetDrawPosition then
+		local ent = parent.Entity or NULL
+
+		if ent:IsValid() then
+			-- if the parent part is a model, get the bone position of the parent model
+			--ent:InvalidateBoneCache()
+
+			pos, ang = pac.GetBonePosAng(ent, bone_override or self.Bone)
+		else
+			-- else just get the origin of the part
+			-- unless we've passed it from parent
+			pos, ang = parent:GetDrawPosition()
+		end
+	elseif owner:IsValid() then
+		-- if there is no parent, default to owner bones
+		owner:InvalidateBoneCache()
+		pos, ang = pac.GetBonePosAng(owner, self.Bone)
+	end
+
+	return pos, ang
 end
 
 -- since this is kind of like a hack I choose to have upper case names to avoid name conflicts with parts

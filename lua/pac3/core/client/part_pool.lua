@@ -89,15 +89,15 @@ do
 				end
 			else
 				for _, part in ipairs(root:GetChildrenList()) do
-					if not part.BuildBonePositions then continue end
+					if not part.OnBuildBonePositions then continue end
 
 					if part.OwnerName ~= "hands" and update_type == "hands" then continue end
 					if part.OwnerName ~= "viewmodel" and update_type == "viewmodel" then continue end
 
 					if part:IsHidden() or part:GetEventHide() then continue end
 
-						part:BuildBonePositions()
-					end
+					part:OnBuildBonePositions()
+				end
 
 				for _, part in ipairs(root:GetChildrenList()) do
 					if not part.Draw then continue end
